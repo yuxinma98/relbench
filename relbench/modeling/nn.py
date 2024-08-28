@@ -8,7 +8,28 @@ from torch_frame.nn.models import ResNet
 from torch_geometric.nn import HeteroConv, LayerNorm, PositionalEncoding, SAGEConv
 from torch_geometric.typing import EdgeType, NodeType
 from torch_geometric.nn import MLP
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.distributions import Dirichlet, Multinomial
 
+class LearnableChoiceNN(nn.Module):
+    def __init__(self, num_choices: int, channels: int):
+        super(LearnableChoiceNN, self).__init__()
+        self.dirichlet_params = nn.Parameter(torch.ones(num_choices))
+        self.num_choices = num_choices
+        self.channels = channels
+
+    def forward(self, x):        
+        # Sample from the Dirichlet distribution
+        dirichlet_dist = Dirichlet(F.softplus(self.dirichlet_params))
+        dirichlet_sample = dirichlet_dist.sample()
+        # Apply the choice to the output (this is a placeholder, adjust as needed)
+        multinomial_dist = Multinomial(self.num_choices, dirichlet_sample)
+        choice = multinomial_dist.sample().argmax().item()
+        # Apply the multinomial choice to the output
+        x = x[:,choice*self.channels: (choice+1)*self.channels]
+        return x
+        
 
 class HeteroEncoder(torch.nn.Module):
     r"""HeteroEncoder based on PyTorch Frame.
@@ -161,6 +182,11 @@ class HeteroGraphSAGE(torch.nn.Module):
                                                hidden_channels=channels,
                                                out_channels=channels,
                                                num_layers=2)
+                elif proj == "choose":
+                    proj_dict[node_type] = LearnableChoiceNN(num_choices=schema.get(node_type, 0), channels=channels) 
+                elif proj is None:
+                    proj_dict[node_type] = torch.nn.Identity()  # Identity projection for no projection
+                    
             self.projs.append(proj_dict)
 
         self.norms = torch.nn.ModuleList()
