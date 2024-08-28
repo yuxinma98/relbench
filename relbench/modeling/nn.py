@@ -7,6 +7,7 @@ from torch_frame.data.stats import StatType
 from torch_frame.nn.models import ResNet
 from torch_geometric.nn import HeteroConv, LayerNorm, PositionalEncoding, SAGEConv
 from torch_geometric.typing import EdgeType, NodeType
+from torch_geometric.nn import MLP
 
 
 class HeteroEncoder(torch.nn.Module):
@@ -130,9 +131,16 @@ class HeteroGraphSAGE(torch.nn.Module):
         channels: int,
         aggr: str = "mean",
         num_layers: int = 2,
+        outer_aggr: str = "sum",
+        schema: dict = None,
     ):
         super().__init__()
 
+        if outer_aggr not in ["sum", "mean", "max"]:
+            outer_aggr, proj = outer_aggr.split("_")
+        else:
+            proj = None
+    
         self.convs = torch.nn.ModuleList()
         for _ in range(num_layers):
             conv = HeteroConv(
@@ -140,9 +148,20 @@ class HeteroGraphSAGE(torch.nn.Module):
                     edge_type: SAGEConv((channels, channels), channels, aggr=aggr)
                     for edge_type in edge_types
                 },
-                aggr="sum",
+                aggr=outer_aggr,
             )
             self.convs.append(conv)
+
+        self.projs = torch.nn.ModuleList()
+        for _ in range(num_layers):
+            proj_dict = torch.nn.ModuleDict()
+            for node_type in node_types:
+                if proj == "MLP":
+                    proj_dict[node_type] = MLP(in_channels=channels * schema.get(node_type, 0), 
+                                               hidden_channels=channels,
+                                               out_channels=channels,
+                                               num_layers=2)
+            self.projs.append(proj_dict)
 
         self.norms = torch.nn.ModuleList()
         for _ in range(num_layers):
@@ -165,8 +184,9 @@ class HeteroGraphSAGE(torch.nn.Module):
         num_sampled_nodes_dict: Optional[Dict[NodeType, List[int]]] = None,
         num_sampled_edges_dict: Optional[Dict[EdgeType, List[int]]] = None,
     ) -> Dict[NodeType, Tensor]:
-        for _, (conv, norm_dict) in enumerate(zip(self.convs, self.norms)):
+        for _, (conv, proj_dict, norm_dict) in enumerate(zip(self.convs, self.projs, self.norms)):
             x_dict = conv(x_dict, edge_index_dict)
+            x_dict = {key: proj_dict[key](x) for key, x in x_dict.items()}
             x_dict = {key: norm_dict[key](x) for key, x in x_dict.items()}
             x_dict = {key: x.relu() for key, x in x_dict.items()}
 

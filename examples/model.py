@@ -21,6 +21,7 @@ class Model(torch.nn.Module):
         channels: int,
         out_channels: int,
         aggr: str,
+        outer_aggr: str,
         norm: str,
         # List of node types to add shallow embeddings to input
         shallow_list: List[NodeType] = [],
@@ -43,12 +44,17 @@ class Model(torch.nn.Module):
             ],
             channels=channels,
         )
+        schema = dict()
+        for edges in data.edge_types:
+            schema[edges[0]] = schema.get(edges[0], 0) + 1
         self.gnn = HeteroGraphSAGE(
             node_types=data.node_types,
             edge_types=data.edge_types,
             channels=channels,
             aggr=aggr,
+            outer_aggr=outer_aggr,
             num_layers=num_layers,
+            schema = schema,
         )
         self.head = MLP(
             channels,

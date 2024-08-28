@@ -24,13 +24,14 @@ from relbench.modeling.utils import get_stype_proposal
 from relbench.tasks import get_task
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--dataset", type=str, default="rel-event")
-parser.add_argument("--task", type=str, default="user-attendance")
+parser.add_argument("--dataset", type=str, default="rel-f1")
+parser.add_argument("--task", type=str, default="driver-position")
 parser.add_argument("--lr", type=float, default=0.005)
 parser.add_argument("--epochs", type=int, default=10)
 parser.add_argument("--batch_size", type=int, default=512)
 parser.add_argument("--channels", type=int, default=128)
 parser.add_argument("--aggr", type=str, default="sum")
+parser.add_argument("--outer_aggr", type=str, choices=["sum", "cat_MLP", "cat_choose"], default="sum")
 parser.add_argument("--num_layers", type=int, default=2)
 parser.add_argument("--num_neighbors", type=int, default=128)
 parser.add_argument("--temporal_strategy", type=str, default="uniform")
@@ -184,6 +185,7 @@ model = Model(
     channels=args.channels,
     out_channels=out_channels,
     aggr=args.aggr,
+    outer_aggr=args.outer_aggr,
     norm="batch_norm",
 ).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
