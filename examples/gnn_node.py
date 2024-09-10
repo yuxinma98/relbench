@@ -11,6 +11,7 @@ import torch
 from model import Model
 from text_embedder import GloveTextEmbedding
 from torch.nn import BCEWithLogitsLoss, L1Loss
+from torch.optim.lr_scheduler import LambdaLR
 from torch_frame import stype
 from torch_frame.config.text_embedder import TextEmbedderConfig
 from torch_geometric.loader import NeighborLoader
@@ -129,11 +130,12 @@ def train() -> float:
     total_steps = min(len(loader_dict["train"]), args.max_steps_per_epoch)
     for batch in tqdm(loader_dict["train"], total=total_steps):
         batch = batch.to(device)
-
         optimizer.zero_grad()
+        temperature = temp_scheduler.step()
         pred = model(
             batch,
             task.entity_table,
+            temperature=temperature,
         )
         pred = pred.view(-1) if pred.size(1) == 1 else pred
 
@@ -161,6 +163,7 @@ def test(loader: NeighborLoader) -> np.ndarray:
         pred = model(
             batch,
             task.entity_table,
+            temperature = 1e-6
         )
         if task.task_type == TaskType.REGRESSION:
             assert clamp_min is not None
@@ -177,7 +180,20 @@ def test(loader: NeighborLoader) -> np.ndarray:
         pred_list.append(pred.detach().cpu())
     return torch.cat(pred_list, dim=0).numpy()
 
+class TemperatureScheduler:
+    def __init__(self, optimizer, initial_temp, final_temp, anneal_rate):
+        self.initial_temp = initial_temp
+        self.final_temp = final_temp
+        self.anneal_rate = anneal_rate
+        self.scheduler = LambdaLR(optimizer, lr_lambda=self.annealing_lambda)
 
+    def annealing_lambda(self, epoch):
+        return max(self.final_temp, self.initial_temp * (self.anneal_rate ** epoch))
+
+    def step(self):
+        self.scheduler.step()
+        return self.scheduler.get_last_lr()[0]
+    
 model = Model(
     data=data,
     col_stats_dict=col_stats_dict,
@@ -189,6 +205,8 @@ model = Model(
     norm="batch_norm",
 ).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+temp_scheduler = TemperatureScheduler(optimizer, initial_temp=0.1, final_temp=1e-3, anneal_rate=0.5)
+
 state_dict = None
 best_val_metric = -math.inf if higher_is_better else math.inf
 for epoch in range(1, args.epochs + 1):

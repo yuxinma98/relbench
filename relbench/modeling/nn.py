@@ -13,21 +13,18 @@ import torch.nn.functional as F
 from torch.distributions import Dirichlet, Multinomial
 
 class LearnableChoiceNN(nn.Module):
-    def __init__(self, num_choices: int, channels: int):
+    def __init__(self, num_choices: int, channels: int, temperature: float = 0.1):
         super(LearnableChoiceNN, self).__init__()
-        self.dirichlet_params = nn.Parameter(torch.ones(num_choices))
         self.num_choices = num_choices
         self.channels = channels
+        self.logits = nn.Parameter(torch.randn(num_choices))
 
-    def forward(self, x):        
-        # Sample from the Dirichlet distribution
-        dirichlet_dist = Dirichlet(F.softplus(self.dirichlet_params))
-        dirichlet_sample = dirichlet_dist.sample()
-        # Apply the choice to the output (this is a placeholder, adjust as needed)
-        multinomial_dist = Multinomial(self.num_choices, dirichlet_sample)
-        choice = multinomial_dist.sample().argmax().item()
-        # Apply the multinomial choice to the output
-        x = x[:,choice*self.channels: (choice+1)*self.channels]
+    def forward(self, x, temperature):
+        distribution = torch.distributions.RelaxedOneHotCategorical(temperature=temperature, logits=self.logits)
+        choice = distribution.sample()
+        x = torch.stack(x.split([self.channels] * self.num_choices, dim=-1), dim=-1)
+        x = x * choice
+        x = x.sum(dim=-1)
         return x
         
 
@@ -207,12 +204,14 @@ class HeteroGraphSAGE(torch.nn.Module):
         self,
         x_dict: Dict[NodeType, Tensor],
         edge_index_dict: Dict[NodeType, Tensor],
+        temperature: float,
         num_sampled_nodes_dict: Optional[Dict[NodeType, List[int]]] = None,
         num_sampled_edges_dict: Optional[Dict[EdgeType, List[int]]] = None,
+
     ) -> Dict[NodeType, Tensor]:
         for _, (conv, proj_dict, norm_dict) in enumerate(zip(self.convs, self.projs, self.norms)):
             x_dict = conv(x_dict, edge_index_dict)
-            x_dict = {key: proj_dict[key](x) for key, x in x_dict.items()}
+            x_dict = {key: proj_dict[key](x, temperature=temperature) for key, x in x_dict.items()}
             x_dict = {key: norm_dict[key](x) for key, x in x_dict.items()}
             x_dict = {key: x.relu() for key, x in x_dict.items()}
 

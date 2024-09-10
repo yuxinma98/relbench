@@ -88,6 +88,7 @@ class Model(torch.nn.Module):
         self,
         batch: HeteroData,
         entity_table: NodeType,
+        temperature: float
     ) -> Tensor:
         seed_time = batch[entity_table].seed_time
         x_dict = self.encoder(batch.tf_dict)
@@ -105,6 +106,7 @@ class Model(torch.nn.Module):
         x_dict = self.gnn(
             x_dict,
             batch.edge_index_dict,
+            temperature,
             batch.num_sampled_nodes_dict,
             batch.num_sampled_edges_dict,
         )
