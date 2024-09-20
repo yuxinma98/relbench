@@ -7,3 +7,5 @@ venv/
 results/
 cache
 examples/wandb
+.vscode
+wandb

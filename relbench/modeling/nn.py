@@ -204,14 +204,17 @@ class HeteroGraphSAGE(torch.nn.Module):
         self,
         x_dict: Dict[NodeType, Tensor],
         edge_index_dict: Dict[NodeType, Tensor],
-        temperature: float,
+        temperature: float = None,
         num_sampled_nodes_dict: Optional[Dict[NodeType, List[int]]] = None,
         num_sampled_edges_dict: Optional[Dict[EdgeType, List[int]]] = None,
 
     ) -> Dict[NodeType, Tensor]:
         for _, (conv, proj_dict, norm_dict) in enumerate(zip(self.convs, self.projs, self.norms)):
             x_dict = conv(x_dict, edge_index_dict)
-            x_dict = {key: proj_dict[key](x, temperature=temperature) for key, x in x_dict.items()}
+            if temperature is None:
+                x_dict = {key: proj_dict[key](x) for key, x in x_dict.items()}
+            else:
+                x_dict = {key: proj_dict[key](x, temperature=temperature) for key, x in x_dict.items()}
             x_dict = {key: norm_dict[key](x) for key, x in x_dict.items()}
             x_dict = {key: x.relu() for key, x in x_dict.items()}
 

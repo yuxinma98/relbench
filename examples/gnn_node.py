@@ -53,7 +53,7 @@ if args.wandb:
     import wandb
     wandb.init(
         project='relbench',
-        entity='<USERNAME>',
+        entity='yuxinma',
         name=args.wandb_name,
         config=vars(args),
     )
@@ -142,7 +142,7 @@ def train() -> float:
     for batch in tqdm(loader_dict["train"], total=total_steps):
         batch = batch.to(device)
         optimizer.zero_grad()
-        temperature = temp_scheduler.step()
+        temperature = temp_scheduler.step() if args.outer_aggr == "cat_choose" else None
         pred = model(
             batch,
             task.entity_table,
@@ -171,10 +171,11 @@ def test(loader: NeighborLoader) -> np.ndarray:
     pred_list = []
     for batch in tqdm(loader):
         batch = batch.to(device)
+        temperature = 1e-6 if args.outer_aggr == "cat_choose" else None
         pred = model(
             batch,
             task.entity_table,
-            temperature = 1e-6
+            temperature = temperature
         )
         if task.task_type == TaskType.REGRESSION:
             assert clamp_min is not None
@@ -219,7 +220,8 @@ if args.wandb and args.wandb_gradient:
     wandb.watch(model, log="gradients", log_freq = 5)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-temp_scheduler = TemperatureScheduler(optimizer, initial_temp=0.1, final_temp=1e-3, anneal_rate=0.5)
+if args.outer_aggr == "cat_choose":
+    temp_scheduler = TemperatureScheduler(optimizer, initial_temp=0.1, final_temp=1e-3, anneal_rate=0.5)
 
 state_dict = None
 best_val_metric = -math.inf if higher_is_better else math.inf
