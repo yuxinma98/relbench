@@ -4,7 +4,7 @@ import json
 import math
 import os
 from pathlib import Path
-from typing import Dict, str2bool
+from typing import Dict
 
 import numpy as np
 import torch
@@ -37,7 +37,7 @@ parser.add_argument("--temporal_strategy", type=str, default="uniform")
 parser.add_argument("--max_steps_per_epoch", type=int, default=2000)
 parser.add_argument("--num_workers", type=int, default=0)
 parser.add_argument("--seed", type=int, default=42)
-parser.add_argument("--wandb", type=str2bool, default=False)
+parser.add_argument("--wandb", type=bool, default=False)
 parser.add_argument("--wandb_name", type=str, default=None)
 parser.add_argument(
     "--cache_dir",
