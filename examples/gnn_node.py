@@ -4,7 +4,7 @@ import json
 import math
 import os
 from pathlib import Path
-from typing import Dict
+from typing import Dict, str2bool
 
 import numpy as np
 import torch
@@ -37,6 +37,8 @@ parser.add_argument("--temporal_strategy", type=str, default="uniform")
 parser.add_argument("--max_steps_per_epoch", type=int, default=2000)
 parser.add_argument("--num_workers", type=int, default=0)
 parser.add_argument("--seed", type=int, default=42)
+parser.add_argument("--wandb", type=str2bool, default=False)
+parser.add_argument("--wandb_name", type=str, default=None)
 parser.add_argument(
     "--cache_dir",
     type=str,
@@ -44,6 +46,14 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+if args.wandb:
+    import wandb
+    wandb.init(
+        project='relbench',
+        entity='<USERNAME>',
+        name=args.wandb_name,
+        config=vars(args),
+    )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
@@ -193,7 +203,15 @@ for epoch in range(1, args.epochs + 1):
     train_loss = train()
     val_pred = test(loader_dict["val"])
     val_metrics = task.evaluate(val_pred, task.get_table("val"))
-    print(f"Epoch: {epoch:02d}, Train loss: {train_loss}, Val metrics: {val_metrics}")
+    log = {}
+    if args.wandb:
+        log['train/loss'] = train_loss
+        for k in val_metrics:
+            log[f'val/{k}'] = val_metrics[k]
+        log["epoch"] = epoch
+        wandb.log(log)
+    else:
+        print(f"Epoch: {epoch:02d}, Train loss: {train_loss}, Val metrics: {val_metrics}")
 
     if (higher_is_better and val_metrics[tune_metric] >= best_val_metric) or (
         not higher_is_better and val_metrics[tune_metric] <= best_val_metric
@@ -205,8 +223,20 @@ for epoch in range(1, args.epochs + 1):
 model.load_state_dict(state_dict)
 val_pred = test(loader_dict["val"])
 val_metrics = task.evaluate(val_pred, task.get_table("val"))
+if args.wandb:
+    log = {}
+    for k in val_metrics:
+        log[f'best_val/{k}'] = val_metrics[k]
+    wandb.log(log)
+
 print(f"Best Val metrics: {val_metrics}")
 
 test_pred = test(loader_dict["test"])
 test_metrics = task.evaluate(test_pred)
+if args.wandb:
+    log = {}
+    for k in test_metrics:
+        log[f'test/{k}'] = test_metrics[k]
+    wandb.log(log)
+
 print(f"Best test metrics: {test_metrics}")
