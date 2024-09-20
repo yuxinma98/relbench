@@ -41,6 +41,7 @@ parser.add_argument("--num_workers", type=int, default=0)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--wandb", type=bool, default=False)
 parser.add_argument("--wandb_name", type=str, default=None)
+parser.add_argument("--wandb_gradient", type=bool, default=False)
 parser.add_argument(
     "--cache_dir",
     type=str,
@@ -214,6 +215,9 @@ model = Model(
     outer_aggr=args.outer_aggr,
     norm="batch_norm",
 ).to(device)
+if args.wandb and args.wandb_gradient:
+    wandb.watch(model, log="gradients", log_freq = 5)
+
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 temp_scheduler = TemperatureScheduler(optimizer, initial_temp=0.1, final_temp=1e-3, anneal_rate=0.5)
 
@@ -260,3 +264,4 @@ if args.wandb:
     wandb.log(log)
 
 print(f"Best test metrics: {test_metrics}")
+wandb.finish()
