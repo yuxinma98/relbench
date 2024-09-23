@@ -9,8 +9,6 @@ from torch_geometric.nn import HeteroConv, LayerNorm, PositionalEncoding, SAGECo
 from torch_geometric.typing import EdgeType, NodeType
 from torch_geometric.nn import MLP
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.distributions import Dirichlet, Multinomial
 
 class LearnableChoiceNN(nn.Module):
     def __init__(self, num_choices: int, channels: int, temperature: float = 0.1):
@@ -18,10 +16,14 @@ class LearnableChoiceNN(nn.Module):
         self.num_choices = num_choices
         self.channels = channels
         self.logits = nn.Parameter(torch.randn(num_choices))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.normal_(self.logits)
 
     def forward(self, x, temperature):
         distribution = torch.distributions.RelaxedOneHotCategorical(temperature=temperature, logits=self.logits)
-        choice = distribution.sample()
+        choice = distribution.rsample()
         x = torch.stack(x.split([self.channels] * self.num_choices, dim=-1), dim=-1)
         x = x * choice
         x = x.sum(dim=-1)
@@ -180,7 +182,7 @@ class HeteroGraphSAGE(torch.nn.Module):
                                                out_channels=channels,
                                                num_layers=2)
                 elif proj == "choose":
-                    proj_dict[node_type] = LearnableChoiceNN(num_choices=schema.get(node_type, 0), channels=channels) 
+                    proj_dict[node_type] = LearnableChoiceNN(num_choices=schema.get(node_type, 0), channels=channels)
                 elif proj is None:
                     proj_dict[node_type] = torch.nn.Identity()  # Identity projection for no projection
                     
@@ -196,6 +198,10 @@ class HeteroGraphSAGE(torch.nn.Module):
     def reset_parameters(self):
         for conv in self.convs:
             conv.reset_parameters()
+        for proj_dict in self.projs:
+            for proj in proj_dict.values():
+                if isinstance(proj, (MLP, LearnableChoiceNN)):
+                    proj.reset_parameters()
         for norm_dict in self.norms:
             for norm in norm_dict.values():
                 norm.reset_parameters()

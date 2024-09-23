@@ -32,7 +32,7 @@ parser.add_argument("--epochs", type=int, default=10)
 parser.add_argument("--batch_size", type=int, default=512)
 parser.add_argument("--channels", type=int, default=128)
 parser.add_argument("--aggr", type=str, default="sum")
-parser.add_argument("--outer_aggr", type=str, choices=["sum", "cat_MLP", "cat_choose"], default="cat_choose")
+parser.add_argument("--outer_aggr", type=str, choices=["sum", "mean", "max", "cat_MLP", "cat_choose", "cat_weightedsum"], default="sum")
 parser.add_argument("--num_layers", type=int, default=2)
 parser.add_argument("--num_neighbors", type=int, default=128)
 parser.add_argument("--temporal_strategy", type=str, default="uniform")
@@ -142,7 +142,7 @@ def train() -> float:
     for batch in tqdm(loader_dict["train"], total=total_steps):
         batch = batch.to(device)
         optimizer.zero_grad()
-        temperature = temp_scheduler.step() if args.outer_aggr == "cat_choose" else None
+        temperature = temp_scheduler.step(epoch) if args.outer_aggr == "cat_choose" else None
         pred = model(
             batch,
             task.entity_table,
@@ -193,18 +193,14 @@ def test(loader: NeighborLoader) -> np.ndarray:
     return torch.cat(pred_list, dim=0).numpy()
 
 class TemperatureScheduler:
-    def __init__(self, optimizer, initial_temp, final_temp, anneal_rate):
+    def __init__(self, initial_temp, final_temp, anneal_rate):
         self.initial_temp = initial_temp
         self.final_temp = final_temp
         self.anneal_rate = anneal_rate
-        self.scheduler = LambdaLR(optimizer, lr_lambda=self.annealing_lambda)
+        self.current_temp = initial_temp
 
-    def annealing_lambda(self, epoch):
+    def step(self, epoch):
         return max(self.final_temp, self.initial_temp * (self.anneal_rate ** epoch))
-
-    def step(self):
-        self.scheduler.step()
-        return self.scheduler.get_last_lr()[0]
     
 model = Model(
     data=data,
@@ -221,7 +217,7 @@ if args.wandb and args.wandb_gradient:
 
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 if args.outer_aggr == "cat_choose":
-    temp_scheduler = TemperatureScheduler(optimizer, initial_temp=0.1, final_temp=1e-3, anneal_rate=0.5)
+    temp_scheduler = TemperatureScheduler(initial_temp=10, final_temp=1e-3, anneal_rate=0.5)
 
 state_dict = None
 best_val_metric = -math.inf if higher_is_better else math.inf
