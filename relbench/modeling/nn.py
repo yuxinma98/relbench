@@ -11,7 +11,7 @@ from torch_geometric.nn import MLP
 import torch.nn as nn
 
 class LearnableChoiceNN(nn.Module):
-    def __init__(self, num_choices: int, channels: int, temperature: float = 0.1):
+    def __init__(self, num_choices: int, channels: int):
         super(LearnableChoiceNN, self).__init__()
         self.num_choices = num_choices
         self.channels = channels
@@ -28,7 +28,23 @@ class LearnableChoiceNN(nn.Module):
         x = x * choice
         x = x.sum(dim=-1)
         return x
-        
+
+class WeightedSum(nn.Module):
+    def __init__(self, num_choices: int, channels: int):
+        super(WeightedSum, self).__init__()
+        self.num_choices = num_choices
+        self.channels = channels
+        self.weights = nn.Parameter(torch.randn(self.num_choices))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.normal_(self.weights)
+
+    def forward(self, x):
+        x = torch.stack(x.split([self.channels] * self.num_choices, dim=-1), dim=-1)
+        x = x * self.weights
+        x = x.sum(dim=-1)
+        return x
 
 class HeteroEncoder(torch.nn.Module):
     r"""HeteroEncoder based on PyTorch Frame.
@@ -183,6 +199,8 @@ class HeteroGraphSAGE(torch.nn.Module):
                                                num_layers=2)
                 elif proj == "choose":
                     proj_dict[node_type] = LearnableChoiceNN(num_choices=schema.get(node_type, 0), channels=channels)
+                elif proj == "weightedsum":
+                    proj_dict[node_type] = WeightedSum(num_choices=schema.get(node_type, 0), channels=channels)
                 elif proj is None:
                     proj_dict[node_type] = torch.nn.Identity()  # Identity projection for no projection
                     
