@@ -106,6 +106,30 @@ def make_pkey_fkey_graph(
             edge_type = (pkey_table_name, f"rev_f2p_{fkey_name}", table_name)
             data[edge_type].edge_index = sort_edge_index(edge_index)
 
+        # Find categorical columns, and the tables where it appears
+        cat_cols = {}
+        for table_name, columns in col_to_stype_dict.items():
+            for col_name, stype in columns.items():
+                if stype == stype.categorical:
+                    cat_cols.setdefault(col_name, []).append(table_name)
+        
+        # Add edges for rows with the same value in a categorical column
+        for col_name, tables in cat_cols.items():
+            # Find all unique values in the column
+            unique_values = set()
+            for table_name in tables:
+                unique_values.update(db.table_dict[table_name].df[col_name].unique())
+            # Add edges between rows with the same value
+            for table1 in tables:
+                df1 = db.table_dict[table1].df
+                for table2 in tables:
+                    df2 = db.table_dict[table2].df
+                    for value, group in df1.groupby(col_name):
+                        df1_indices = torch.from_numpy(group.index.values)
+                        df2_indices = torch.from_numpy(df2[df2[col_name]==value].index.values)
+                        edge_index = torch.cartesian_prod(df1_indices, df2_indices).t()
+                        edge_type = (table1, f"{col_name}_{value}", table2)
+                        data[edge_type].edge_index = sort_edge_index(edge_index)
     data.validate()
 
     return data, col_stats_dict
