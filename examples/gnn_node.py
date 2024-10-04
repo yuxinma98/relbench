@@ -244,4 +244,5 @@ if args.wandb:
     wandb.log(log)
 
 print(f"Best test metrics: {test_metrics}")
-wandb.finish()
+if args.wandb:
+    wandb.finish()
